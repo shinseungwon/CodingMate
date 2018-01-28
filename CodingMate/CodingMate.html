@@ -1,0 +1,438 @@
+﻿<!--CodingMate 1.0
+Author : Seung won Shin (ssw900528@gmail.com)
+Copyright(c) 2018. seungwon - shin. All rights reserved.-->
+
+<!DOCTYPE HTML>
+<html style="height:100%;">
+<head>    
+    <script src="Script/jquery.min.js"></script>
+    <link rel="stylesheet" href="Script/bootstrap/css/bootstrap.min.css">
+    <script src="Script/bootstrap/js/bootstrap.min.js"></script>
+    <link rel="stylesheet" href="Script/highlight/styles/default.css">
+    <script src="Script/highlight/highlight.pack.js"></script>
+    <script>hljs.initHighlightingOnLoad();</script>
+    <style>
+        #myInput, #txtHashtags {
+            background-position: 10px 12px;
+            background-repeat: no-repeat;
+            width: 80%;
+            font-size: 16px;
+            padding: 12px 20px 12px 20px;
+            border: 1px solid #ddd;
+        }
+
+        #List {
+            list-style-type: none;
+            padding: 0;
+            margin: 0;
+        }
+
+            #List li a {
+                border: 1px solid #ddd;
+                margin-top: -1px;
+                background-color: #a0a0a0;
+                padding: 6px;
+                text-decoration: none;
+                font-size: 18px;
+                color: black;
+                display: block;
+            }
+
+                #List li a:hover:not(.header) {
+                    background-color: #aaa;
+                }
+    </style>
+    <script>
+        //전역변수
+        CodingMate = new Array();
+        CurrentIndex = -1;
+        CurrentIndexTemp = -1;
+        EditFlag = 0; //0 : 수정중 아님, 1 : 수정중
+        NewFlag = 0; //0 : 새로 제작중 아님, 1 : 새로 제작중
+
+        //페이지 로드
+        $(document).ready(function page_load() {
+
+            //컨텐츠 창 크기 조절
+            $("#ContentCode").width($(window).width() - 420);
+            $("#ContentCode").height($(window).height() - 180);
+
+            //코드 스타일러 로드
+            hljs.initHighlightingOnLoad();
+
+            String.prototype.replaceAll = function (org, dest) {
+                return this.split(org).join(dest);
+            }
+
+            $("#ContentEditable").hide();
+            $("#HashTagsEdit").hide();
+            $("#cancelbtnid").hide();
+
+            //탭 키 이벤트 핸들러
+            $("#ContentCodeEdit").keydown(function (e) {
+
+                var val = this.value,
+                    start = this.selectionStart,
+                    end = this.selectionEnd;
+
+                if (e.which == 9 || e.keyCode == 9) {
+                    e.preventDefault();
+
+                    if (e.shiftKey) {
+                        var firstTabPoint = val.lastIndexOf('\n', start) + 1;
+
+                        if (val.substring(firstTabPoint, firstTabPoint + 1) == '\t') {
+                            var startString = val.substr(0, firstTabPoint);
+                            var endString = val.substr(firstTabPoint + 1);
+
+                            this.value = startString + endString;
+                            this.setSelectionRange(start - 1, end - 1);
+                        }
+                    } else {
+                        this.value = val.substring(0, start) + '\t' + val.substring(end);
+                        this.setSelectionRange(start + 1, end + 1);
+                    }
+                }
+            });
+
+            document.getElementById('file_open').addEventListener('change', readSingleFile, false);
+
+        });
+
+        //윈도우 리사이즈 핸들러
+        $(window).resize(function () {
+            $("#ContentCode").width($(window).width() - 420);
+            $("#ContentCode").height($(window).height() - 180);
+        });
+
+        //검색
+        function searchList() {
+
+            var input, filter, filters, ul, li, a, i;
+            input = document.getElementById('myInput');
+            filter = input.value.toUpperCase();
+            filters = filter.split("/");
+            ul = document.getElementById("List");
+            li = ul.getElementsByTagName('li');
+
+            if ($("#rdAnd").prop("checked")) { //and
+                for (i = 0; i < li.length; i++) {
+                    a = li[i].getElementsByTagName("a")[0];
+                    for (j = 0; j < filters.length; j++) {
+
+                        if (a.innerText.toUpperCase().indexOf(filters[j]) > -1) {
+                            li[i].style.display = "";
+                        } else {
+                            li[i].style.display = "none";
+                            break;
+                        }
+                    }
+                }
+            } else { //or
+                for (i = 0; i < li.length; i++) {
+                    a = li[i].getElementsByTagName("a")[0];
+                    for (j = 0; j < filters.length; j++) {
+
+                        if (a.innerText.toUpperCase().indexOf(filters[j]) > -1) {
+                            li[i].style.display = "";
+                            break;
+                        } else {
+                            li[i].style.display = "none";
+                        }
+                    }
+                }
+            }
+        }
+
+        //xml로 저장
+        function exportBtn() {
+            //alert("Export");
+
+            var str = "<Itmes>\n";
+
+            for (var i = 0; i < CodingMate.length; i++) {
+                str += "<Item>\n";
+                str += "<Title>" + CodingMate[i].Title + "</Title>\n";
+                str += "<Data>" + encodeURI(CodingMate[i].Data) + "</Data>\n";
+                str += "</Item>\n";
+            }
+
+            str += "\n</Items>";
+
+            var date = new Date();
+            var filenm = date.getFullYear() + "-" + (date.getMonth() + 1) + "-" + date.getDate() + ".xml";
+            download(filenm, str);
+        }
+
+        //새로 만들기, 저장
+        function newBtn() {
+            //alert("new");
+
+            if (EditFlag == 1) return;
+
+            if ($("#newbtnid").val() == "New") { //on New
+
+                CurrentIndexTemp = CurrentIndex;
+                CurrentIndex = -1;
+                NewFlag = 1;
+
+                $("#ContentFixed").hide();
+                $("#ContentCodeEdit").val("");
+                $("#ContentEditable").show();
+                $("#HashTagsFixed").hide();
+                $("#txtHashtags").val("");
+                $("#HashTagsEdit").show();
+                $("#newbtnid").val("Save");
+                $("#cancelbtnid").show();
+
+            } else { //on Save
+
+                if ($("#ContentCodeEdit").val() == "") {
+                    alert("Insert Code");
+                    return;
+                } else if ($("#txtHashtags").val() == "") {
+                    alert("Insert Tags");
+                    return;
+                }
+
+                NewFlag = 0;
+
+                var item = {
+                    Title: $("#txtHashtags").val()
+                    , Data: $("#ContentCodeEdit").val()
+                }
+
+                CodingMate.push(item);
+
+                CurrentIndex = CodingMate.length;
+
+                $("#ContentEditable").hide();
+                $("#ContentCode").text($("#ContentCodeEdit").val());
+                $("#ContentFixed").show();
+
+                $("#HashTagsEdit").hide();
+                $("#HashTagsString").text($("#txtHashtags").val());
+                $("#HashTagsFixed").show();
+
+                $("#newbtnid").val("New");
+                $('pre code').each(function (i, block) {
+                    hljs.highlightBlock(block);
+                });
+
+                $("#cancelbtnid").hide();
+                refreshList();
+                selectItem(CodingMate.length - 1);
+            }
+        }
+
+        //수정버튼
+        function editBtn() {
+            //alert("edit");
+
+            if (NewFlag == 1) return;
+            if (CurrentIndex == -1) return;
+
+            if ($("#editbtnid").val() == "Edit") { //on Edit
+
+                EditFlag = 1;
+
+                $("#ContentFixed").hide();
+                $("#ContentCodeEdit").val($("#ContentCode").text());
+                $("#ContentEditable").show();
+
+                $("#HashTagsFixed").hide();
+                $("#txtHashtags").val($("#HashTagsString").text());
+                $("#HashTagsEdit").show();
+
+                $("#editbtnid").val("Save");
+            } else { //on Save
+
+                EditFlag = 0;
+
+                $("#ContentEditable").hide();
+                $("#ContentCode").text($("#ContentCodeEdit").val());
+                $("#ContentFixed").show();
+                $("#HashTagsEdit").hide();
+                $("#HashTagsString").text($("#txtHashtags").val());
+                $("#HashTagsFixed").show();
+
+                CodingMate[CurrentIndex].Title = $("#txtHashtags").val();
+                CodingMate[CurrentIndex].Data = $("#ContentCodeEdit").val();
+
+                $("#editbtnid").val("Edit");
+                $('pre code').each(function (i, block) {
+                    hljs.highlightBlock(block);
+                });
+                refreshList();
+                selectItem(CurrentIndex);
+            }
+        }
+
+        //삭제버튼
+        function deleteBtn() {
+            //alert("Delete");
+            CodingMate.splice(CurrentIndex, 1);
+            refreshList();
+
+            $("#ContentCode").text("");
+            $("#HashTagsString").text("");
+        }
+
+        //신규 후 취소 버튼
+        function cancelBtn() {
+            $("#ContentEditable").hide();
+            $("#ContentFixed").show();
+            $("#HashTagsEdit").hide();
+            $("#HashTagsFixed").show();
+            $("#cancelbtnid").hide();
+            $("#newbtnid").val("New");
+            selectItem(CurrentIndexTemp);
+
+            NewFlag = 0;
+        }
+
+        //아이템 선택
+        function selectItem(obj) {
+
+            $("#Li" + CurrentIndex).css("background-color", "#aaa");
+
+            $("#Li" + obj).css("background-color", "#666");
+
+            CurrentIndex = obj;
+
+            $("#ContentCode").text(CodingMate[obj].Data);
+            $("#HashTagsString").text(CodingMate[obj].Title);
+
+            $('pre code').each(function (i, block) {
+                hljs.highlightBlock(block);
+            });
+        }
+
+        //xml 파일 읽기
+        function readSingleFile(e) {
+
+            if ($("#rdNew").prop("checked"))
+                CodingMate = new Array();
+
+            refreshList();
+
+            var file = e.target.files[0];
+            if (!file) {
+                return;
+            }
+            var reader = new FileReader();
+            reader.onload = function (e) {
+                var contents = e.target.result;
+                displayContents(contents);
+            };
+            reader.readAsText(file);
+        }
+
+        //파일 객체로 저장
+        function displayContents(contents) {
+
+            var parser, xmlDoc, items;
+
+            if (window.DOMParser) {
+                parser = new DOMParser();
+                xmlDoc = parser.parseFromString(contents, "text/xml");
+                var items = xmlDoc.getElementsByTagName("Item");
+
+                for (var i = 0; i < items.length; i++) {
+                    var Item = {
+                        Title: items[i].getElementsByTagName("Title")[0].childNodes[0].nodeValue
+                        , Data: decodeURI(items[i].getElementsByTagName("Data")[0].childNodes[0].nodeValue)
+                    }
+                    CodingMate.push(Item);
+                }
+                refreshList();
+            } else alert("Cannot be supported!");
+        }
+
+        //새 항목 추가, 삭제, 새 파일 불러올 때 좌측 리스트 리프레시
+        function refreshList() {
+            $("#List").empty();
+            for (var i = 0; i < CodingMate.length; i++) {
+                $("#List").append('<li><a href="javascript:selectItem(' + i + ');" id = "Li' + i + '" onmouseover="listHover(' + i + ')"><span class="tab">' + CodingMate[i].Title + '</span></a></li>');
+            }
+        }
+
+        //좌측 리스트 마우스오버 이벤트 (모달창)
+        function listHover(obj) {
+
+        }
+
+        //객체를 xml로 다운로드
+        function download(filename, text) {
+            var element = document.createElement('a');
+            element.setAttribute('href', 'data:text/xml;charset=utf-8,%EF%BB%BF' + encodeURIComponent(text));
+            element.setAttribute('download', filename);
+            element.style.display = 'none';
+            document.body.appendChild(element);
+            element.click();
+            document.body.removeChild(element);
+        }
+
+        //copy 버튼
+        function copyToClipboard() {
+
+            if (CurrentIndex == -1) return;
+
+            $("#ContentEditable").show();
+            $("#ContentFixed").hide();
+            $("#ContentCodeEdit").val($("#ContentCode").text()).select();
+            document.execCommand("copy");
+            $("#ContentEditable").hide();
+            $("#ContentFixed").show();
+        }
+
+    </script>
+</head>
+<body style="background-color:#eee; height:100%;">
+    <table style="width:100%; height:100%;">
+        <tr>
+            <td style="width:400px; min-width:200px; background-color:#ddd;" valign="top">
+                <div style="overflow-y:scroll; height:100%;"><ul id="List" /></div>
+            </td>
+            <td>
+                <table style="width:100%; height:100%;">
+                    <tr>
+                        <!--코드 본문 라인-->
+                        <td id="ContentFixed" style="height:580px; background-color:#eee;" valign="top" colspan="2"><pre><code id="ContentCode" style=" width:1125px; height:565px;"></code></pre></td>
+                        <td id="ContentEditable" style="height:582px; background-color:#eee;" valign="top" colspan="2"><textarea id="ContentCodeEdit" style="width:100%; height:100%;"></textarea></td>
+                    </tr>
+                    <tr>
+                        <!--해시태그 라인-->
+                        <td id="HashTagsFixed" style="padding:5px; background-color:#777; width:100%; height:30px; padding-left:5px;" colspan="2"><h5 id="HashTagsString" colspan="2">&nbsp;</h5></td>
+                        <td id="HashTagsEdit" style="padding:5px; background-color:#777; width:100%; height:30px; padding-left:5px;" colspan="2"><input type="text" style="padding:2px 12px 2px 12px;" id="txtHashtags" placeholder="Input HashTags ..."></td>
+                    </tr>
+                    <tr>
+                        <!--검색창-->
+                        <td style="background-color:#999; padding-left:5px; padding-top:3px; height:40px;" colspan="2">
+                            <input type="text" id="myInput" onkeyup="searchList()" placeholder="Search for Title ( Split by '/' ) ...">&ensp;                            
+                            <input type="radio" id="rdAnd" class="rd" name="searchOption" checked /><label for="rdAnd">AND</label>&ensp;
+                            <input type="radio" id="rdOr" class="rd" name="searchOption" /><label for="rdOr">OR</label>
+                        </td>
+                    </tr>
+                    <tr>
+                        <!--버튼 라인-->
+                        <td style="padding-left:5px; background-color:#999; height:40px;">
+                            <input type="button" id="Copy" class="btn btn-primary" value="Copy" onclick="javascript:copyToClipboard();" style="height:44px;" />
+                            <input type="button" id="newbtnid" class="btn btn-success" value="New" onclick="javascript:newBtn();" style="height:44px;" />
+                            <input type="button" id="cancelbtnid" class="btn btn-warning" value="Cancel" onclick="javascript:cancelBtn();" style="height:44px;" />
+                            <input type="button" id="editbtnid" class="btn btn-success" value="Edit" onclick="javascript:editBtn();" style="height:44px;" />
+                            <input type="button" id="delbtnid" class="btn btn-danger" value="Delete" onclick="javascript:deleteBtn();" style="height:44px;" />
+                            <input type="button" class="btn btn-info" value="Export" onclick="javascript:exportBtn();" style="height:44px;" />
+                            <input type="button" class="btn btn-info" value="Open" onclick="" style="height:44px; width:80px; position:absolute;" />
+                            <input type="file" id="file_open" class="btn btn-info" value="" style="opacity:0; width:80px; position:relative;" />&ensp;
+                            <input type="radio" style="margin-bottom:12px;" id="rdAdd" class="rd" name="importOption" checked /><label for="rdAdd">ADD</label>&ensp;
+                            <input type="radio" style="margin-bottom:12px;" id="rdNew" class="rd" name="importOption" /><label for="rdNew">NEW</label>
+                        </td>
+                        <td style="background-color:#999;"><h2 align="right">CodingMate&nbsp;</h2></td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>
